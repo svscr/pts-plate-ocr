@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=84"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pts-plate-ocr"
+version = "0.2.0"
+description = "Yerel, PTS'den bağımsız Türk plaka OCR yardımcısı"
+requires-python = ">=3.13"
+dependencies = [
+  "rapidocr==3.9.2",
+  "onnxruntime==1.27.0",
+  "PySide6-Essentials==6.11.1",
+  "mss==10.1.0",
+  "platformdirs==4.5.1",
+]
+
+[project.scripts]
+pts-plate-ocr = "pts_plate_ocr.app:main"
+pts-plate-ocr-eval = "pts_plate_ocr.evaluator:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

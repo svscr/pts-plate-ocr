@@ -1,0 +1,2 @@
+image_path,expected_plate,split,capture_session,conditions
+samples/example.jpg,35CZB379,validation,evening_01,headlight_glare

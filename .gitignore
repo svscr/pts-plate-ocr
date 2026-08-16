@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.py[cod]
+src/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+build-automation-test/
+dist/
+*.spec
+reports/
+*.log
+data/private/
+# Local camera material and evaluator manifests may contain vehicle data.
+data/manifest.csv
+
+# Abandoned PTS UI-automation experiment; not part of the OCR application.
+run_automation_test.py
+README-OTOMASYON-TEST.md
+scripts/build-automation-test.ps1
