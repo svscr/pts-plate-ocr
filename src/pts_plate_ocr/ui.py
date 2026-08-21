@@ -326,7 +326,13 @@ class ResultPopup(QtWidgets.QWidget):
             self.heading.setText("OCR sonucu")
         self.adjustSize()
         screen = QtGui.QGuiApplication.primaryScreen().availableGeometry()
-        self.move(screen.right() - self.width() - 24, screen.bottom() - self.height() - 64)
+        # ParkMatik'in supplied 1920x1080 layout has a clear space below the
+        # image dialog around 27.3% of the screen width. Keep the existing
+        # bottom alignment while placing the result panel in that space.
+        self.move(
+            screen.left() + round(screen.width() * 0.273),
+            screen.bottom() - self.height() - 64,
+        )
         self.show()
         self.raise_()
         if result.status == ResultStatus.HIGH_CONFIDENCE:
