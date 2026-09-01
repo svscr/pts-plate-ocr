@@ -1,0 +1,102 @@
+name: Windows portable release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Kaynak kodu al
+        uses: actions/checkout@v4
+
+      - name: Python 3.13 kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          architecture: "x64"
+          cache: pip
+
+      - name: Bağımlılıkları kur
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Testleri çalıştır
+        run: python -m pytest -q
+
+      - name: Kod kalitesini kontrol et
+        run: python -m ruff check src tests
+
+      - name: Tag ve uygulama sürümünü doğrula
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $match = Select-String -LiteralPath ./pyproject.toml -Pattern '^version = "([^"]+)"$'
+          $expectedTag = "v$($match.Matches[0].Groups[1].Value)"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Tag $env:GITHUB_REF_NAME, uygulama sürümü $expectedTag ile eşleşmiyor."
+          }
+
+      - name: Portable paketi oluştur
+        shell: pwsh
+        run: ./scripts/build-portable.ps1 -Python (Get-Command python).Source -OutputDirectory ./release
+
+      - name: EXE başlangıç testi
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ./release/PTSPlateOCR/PTSPlateOCR.exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) {
+            throw "PTSPlateOCR.exe başlangıç sırasında kapandı (kod: $($process.ExitCode))."
+          }
+          Stop-Process -Id $process.Id -Force
+
+      - name: Release içeriğini doğrula
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = Get-ChildItem ./release/PTSPlateOCR-v*-win64.zip -File -ErrorAction Stop
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($archive.FullName)
+          try {
+            $names = $zip.Entries.FullName
+            $forbidden = $names | Where-Object {
+              $_ -match '(^|/)(tests?|\.pytest_cache|\.ruff_cache)(/|$)' -or
+              $_ -match '\.(py|pyc|pyo)$'
+            }
+            if ($forbidden) {
+              throw "Release paketinde geliştirme/test dosyaları bulundu: $($forbidden -join ', ')"
+            }
+            if (-not ($names -contains 'PTSPlateOCR/PTSPlateOCR.exe')) {
+              throw "Portable ZIP içinde PTSPlateOCR.exe bulunamadı."
+            }
+          }
+          finally {
+            $zip.Dispose()
+          }
+
+      - name: Build çıktısını sakla
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTSPlateOCR-windows-portable
+          path: |
+            release/*.zip
+            release/*.sha256
+          if-no-files-found: error
+
+      - name: GitHub Release yayımla
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem ./release -File | Where-Object {
+            $_.Extension -eq '.zip' -or $_.Name.EndsWith('.zip.sha256')
+          }
+          gh release create $env:GITHUB_REF_NAME $assets.FullName --verify-tag --generate-notes

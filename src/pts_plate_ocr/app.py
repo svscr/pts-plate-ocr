@@ -30,7 +30,7 @@ class ScanWorker(QtCore.QObject):
     def scan(self, config: AppConfig) -> None:
         try:
             frame = capture_frame(config)
-            result = self.ocr.analyze(frame.search_band)
+            result = self.ocr.analyze(frame.search_band, config.confidence)
             self.completed.emit(result, frame)
         except CaptureError as error:
             self.completed.emit(RecognitionResult(ResultStatus.ERROR, message=str(error)), None)

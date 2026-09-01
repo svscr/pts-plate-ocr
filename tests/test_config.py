@@ -25,13 +25,18 @@ def test_legacy_f7_config_migrates_without_losing_other_settings(tmp_path: Path)
     path.write_text('{"schema_version": 1, "hotkey": "F7"}', encoding="utf-8")
     config = ConfigStore(path).load()
     assert config.hotkey == "Ctrl+Alt+P"
-    assert '"schema_version": 5' in path.read_text(encoding="utf-8")
+    assert '"schema_version": 6' in path.read_text(encoding="utf-8")
 
 
-def test_automation_defaults_are_valid() -> None:
-    config = AppConfig()
-    config.validate()
-    assert config.automation.main_window_title_contains == "ParkMatik"
-    assert config.automation.ticket_window_title_contains == "Bilet Sorgulama"
-    assert config.automation.image_dialog_title_contains == "Bilet Resimleri"
-    assert config.automation.ticket_row_click_x == 0.56
+def test_legacy_automation_settings_are_removed(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"schema_version": 5, "hotkey": "Ctrl+Alt+O", '
+        '"automation": {"enabled": true}}',
+        encoding="utf-8",
+    )
+    config = ConfigStore(path).load()
+    saved = path.read_text(encoding="utf-8")
+    assert config.hotkey == "Ctrl+Alt+O"
+    assert '"schema_version": 6' in saved
+    assert "automation" not in saved

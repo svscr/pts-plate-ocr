@@ -4,10 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pts-plate-ocr"
-version = "0.2.0"
+version = "0.3.0"
 description = "Yerel, PTS'den bağımsız Türk plaka OCR yardımcısı"
 requires-python = ">=3.13"
 dependencies = [
+  "numpy==2.5.2",
+  "opencv-python==5.0.0.93",
   "rapidocr==3.9.2",
   "onnxruntime==1.27.0",
   "PySide6-Essentials==6.11.1",

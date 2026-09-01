@@ -42,7 +42,14 @@ Türkçe karakter içeren Windows dosya adları evaluator tarafından destekleni
 .\scripts\build-portable.ps1
 ```
 
-Çıktı doğrudan `..\outputs\PTSPlateOCR\PTSPlateOCR.exe` olur; ZIP oluşturulmaz. `onedir` paket biçimi kullanılır: OCR model dosyaları doğrudan uygulama klasöründe yer alır; Python kurulumu hedef bilgisayarda gerekmez.
+Çıktılar `..\outputs\PTSPlateOCR` klasörü, sürümlü portable ZIP ve SHA-256 doğrulama dosyasıdır:
+
+```text
+PTSPlateOCR-v0.3.0-win64.zip
+PTSPlateOCR-v0.3.0-win64.zip.sha256
+```
+
+`onedir` paket biçimi kullanılır: OCR model dosyaları doğrudan uygulama klasöründe yer alır; Python kurulumu hedef bilgisayarda gerekmez. ZIP yalnız çalışma zamanı dosyalarını, kullanım belgesini ve lisans bildirimlerini içerir; geliştirme ve test dosyaları pakete alınmaz.
 
 ## Tanılama ve gizlilik
 

@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 from rapidocr import RapidOCR
 
+from .config import ConfidenceConfig
 from .image_pipeline import crop_quad, preprocessing_variants
 from .models import PlateCandidate, RecognitionResult, ResultStatus
 from .plate import parse_candidates
@@ -104,7 +105,11 @@ class LocalPlateOcr:
         box = np.array([[x, y], [x + width, y], [x + width, y + height], [x, y + height]], dtype=np.float32)
         return [TextDetection(text, score, box)]
 
-    def analyze(self, search_image: np.ndarray) -> RecognitionResult:
+    def analyze(
+        self,
+        search_image: np.ndarray,
+        confidence: ConfidenceConfig | None = None,
+    ) -> RecognitionResult:
         if search_image is None or search_image.size == 0:
             return RecognitionResult(ResultStatus.ERROR, message="Geçersiz görüntü")
         started = time.perf_counter()
@@ -176,7 +181,7 @@ class LocalPlateOcr:
                     )
         timings["recognition"] = (time.perf_counter() - recognition_start) * 1000
         timings["total"] = (time.perf_counter() - started) * 1000
-        result = self._aggregate(observations, timings)
+        result = self._aggregate(observations, timings, confidence or ConfidenceConfig())
         if result.status == ResultStatus.NO_READ:
             result.raw_readings = list(dict.fromkeys(raw_readings))[:8]
         return result
@@ -203,7 +208,12 @@ class LocalPlateOcr:
             )
 
     @staticmethod
-    def _aggregate(observations: Iterable[Observation], timings: dict[str, float]) -> RecognitionResult:
+    def _aggregate(
+        observations: Iterable[Observation],
+        timings: dict[str, float],
+        confidence: ConfidenceConfig | None = None,
+    ) -> RecognitionResult:
+        confidence = confidence or ConfidenceConfig()
         grouped: dict[str, list[Observation]] = defaultdict(list)
         all_observations = list(observations)
         for observation in all_observations:
@@ -240,7 +250,11 @@ class LocalPlateOcr:
         candidates.sort(key=lambda item: item.score, reverse=True)
         best = candidates[0]
         second_score = candidates[1].score if len(candidates) > 1 else 0.0
-        is_high = best.score >= 0.90 and best.variant_count >= 2 and best.score - second_score >= 0.08
+        is_high = (
+            best.score >= confidence.high_score
+            and best.variant_count >= confidence.minimum_agreeing_variants
+            and best.score - second_score >= confidence.minimum_margin
+        )
         return RecognitionResult(
             status=ResultStatus.HIGH_CONFIDENCE if is_high else ResultStatus.REVIEW,
             plate=best.plate,

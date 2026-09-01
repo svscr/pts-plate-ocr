@@ -5,7 +5,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from .config import AppConfig, ConfigStore
 from .models import NormalizedRect, PixelRect, RecognitionResult, ResultStatus, WindowMatcher
 from .shortcuts import normalize_hotkey
-from .windows import WindowInfo, find_window, foreground_window_info
+from .windows import WindowInfo, foreground_window_info
 
 
 class SelectionOverlay(QtWidgets.QWidget):
@@ -148,124 +148,6 @@ class CalibrationController(QtCore.QObject):
         self.message.emit(f"Kalibrasyon kaydedildi. {self.config.hotkey} ile deneyebilirsiniz.")
 
 
-class AutomationCalibrationController(QtCore.QObject):
-    """Keeps test-automation coordinates separate from normal OCR calibration."""
-
-    updated = QtCore.Signal(AppConfig)
-    message = QtCore.Signal(str)
-
-    def __init__(self, store: ConfigStore, config: AppConfig) -> None:
-        super().__init__()
-        self.store = store
-        self.config = config
-        self._target: WindowInfo | None = None
-        self._photo: QtCore.QRect | None = None
-        self._overlay: SelectionOverlay | None = None
-
-    def start_ticket_grid(self) -> None:
-        target = find_window(self.config.automation.ticket_window_title_contains)
-        if target is None:
-            self.message.emit("Bilet Sorgulama penceresi bulunamadı. Önce pencere başlığını ayarlayın.")
-            return
-        self._target = target
-        self._overlay = SelectionOverlay("PTS otomasyonu: Bilet Sorgulama tablosunun tamamını seçin")
-        self._overlay.selected.connect(self._ticket_grid_selected)
-        self._overlay.cancelled.connect(lambda: self.message.emit("Otomasyon kalibrasyonu iptal edildi."))
-        self._overlay.show()
-
-    def start_entrance_photo(self) -> None:
-        target = find_window(self.config.automation.image_dialog_title_contains)
-        if target is None:
-            self.message.emit("Önce ParkMatik'te Bilet Resimleri penceresini açın.")
-            return
-        self._target = target
-        self._photo = None
-        self._overlay = SelectionOverlay("PTS otomasyonu: Yalnız GİRİŞ fotoğraf alanını seçin")
-        self._overlay.selected.connect(self._entrance_photo_selected)
-        self._overlay.cancelled.connect(lambda: self.message.emit("Otomasyon kalibrasyonu iptal edildi."))
-        self._overlay.show()
-
-    def start_plate_input(self) -> None:
-        target = find_window(self.config.automation.plate_dialog_title_contains)
-        if target is None:
-            self.message.emit("Önce ParkMatik'te Plaka Değiştirme penceresini açın.")
-            return
-        self._target = target
-        self._overlay = SelectionOverlay("PTS otomasyonu: Plaka yazı alanını seçin")
-        self._overlay.selected.connect(self._plate_input_selected)
-        self._overlay.cancelled.connect(lambda: self.message.emit("Otomasyon kalibrasyonu iptal edildi."))
-        self._overlay.show()
-
-    def _ticket_grid_selected(self, rect: QtCore.QRect) -> None:
-        if not self._target:
-            return
-        client = PixelRect(
-            self._target.client_left,
-            self._target.client_top,
-            self._target.client_width,
-            self._target.client_height,
-        )
-        try:
-            self.config.automation.ticket_grid_roi = _normalise(rect, client)
-        except ValueError:
-            self.message.emit("Bilet tablosu PTS pencere sınırları içinde olmalı.")
-            return
-        self._save("Bilet tablosu kalibrasyonu kaydedildi.")
-
-    def _entrance_photo_selected(self, rect: QtCore.QRect) -> None:
-        self._photo = rect
-        self._overlay = SelectionOverlay("PTS otomasyonu: Plakanın gelebileceği GİRİŞ arama bandını seçin")
-        self._overlay.selected.connect(self._entrance_search_selected)
-        self._overlay.cancelled.connect(lambda: self.message.emit("Otomasyon kalibrasyonu iptal edildi."))
-        self._overlay.show()
-
-    def _entrance_search_selected(self, rect: QtCore.QRect) -> None:
-        if not self._target or not self._photo:
-            return
-        client = PixelRect(
-            self._target.client_left,
-            self._target.client_top,
-            self._target.client_width,
-            self._target.client_height,
-        )
-        search = rect.intersected(self._photo)
-        if search.width() < 20 or search.height() < 20:
-            self.message.emit("Arama bandı GİRİŞ fotoğraf alanının içinde olmalı.")
-            return
-        try:
-            photo_pixels = PixelRect(
-                self._photo.left(), self._photo.top(), self._photo.width(), self._photo.height()
-            )
-            self.config.automation.entrance_photo_roi = _normalise(self._photo, client)
-            self.config.automation.entrance_plate_search_roi = _normalise(search, photo_pixels)
-        except ValueError:
-            self.message.emit("GİRİŞ fotoğrafı Bilet Resimleri pencere sınırları içinde olmalı.")
-            return
-        self._save("GİRİŞ görseli ve arama bandı kalibrasyonu kaydedildi.")
-
-    def _plate_input_selected(self, rect: QtCore.QRect) -> None:
-        if not self._target:
-            return
-        client = PixelRect(
-            self._target.client_left,
-            self._target.client_top,
-            self._target.client_width,
-            self._target.client_height,
-        )
-        try:
-            self.config.automation.plate_input_roi = _normalise(rect, client)
-        except ValueError:
-            self.message.emit("Plaka alanı Plaka Değiştirme penceresinin içinde olmalı.")
-            return
-        self._save("Plaka alanı kalibrasyonu kaydedildi.")
-
-    def _save(self, message: str) -> None:
-        self.config.validate()
-        self.store.save(self.config)
-        self.updated.emit(self.config)
-        self.message.emit(message)
-
-
 class ResultPopup(QtWidgets.QWidget):
     copy_requested = QtCore.Signal(str)
 
@@ -346,12 +228,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self,
         config: AppConfig,
         parent: QtWidgets.QWidget | None = None,
-        *,
-        automation_test: bool = False,
     ) -> None:
         super().__init__(parent)
         self.config = AppConfig.from_dict(config.to_dict())
-        self.automation_test = automation_test
         self.setWindowTitle("PTS Plaka OCR Ayarları")
         layout = QtWidgets.QFormLayout(self)
         self.hotkey = QtWidgets.QKeySequenceEdit(self)
@@ -376,31 +255,6 @@ class SettingsDialog(QtWidgets.QDialog):
         layout.addRow("OCR kısayolu", self.hotkey)
         layout.addRow(shortcut_note)
         layout.addRow("Tanılama", self.debug)
-        if self.automation_test:
-            self.automation_enabled = QtWidgets.QCheckBox("PTS otomasyonu test modunda açık")
-            self.automation_enabled.setChecked(config.automation.enabled)
-            self.automation_main_title = QtWidgets.QLineEdit(config.automation.main_window_title_contains)
-            self.automation_ticket_title = QtWidgets.QLineEdit(config.automation.ticket_window_title_contains)
-            self.automation_timeout = QtWidgets.QSpinBox()
-            self.automation_timeout.setRange(2, 30)
-            self.automation_timeout.setValue(config.automation.timeout_seconds)
-            self.automation_click_x = QtWidgets.QDoubleSpinBox()
-            self.automation_click_x.setRange(0.05, 0.95)
-            self.automation_click_x.setSingleStep(0.01)
-            self.automation_click_x.setDecimals(2)
-            self.automation_click_x.setValue(config.automation.ticket_row_click_x)
-            automation_note = QtWidgets.QLabel(
-                "Test akışı yalnız GİRİŞ görselini okur, Plaka Değiştirme alanını doldurur "
-                "ve Kaydet'e basmadan durur. ParkMatik bulunamazsa pencere başlığındaki sabit "
-                "bir kelimeyi yazın."
-            )
-            automation_note.setWordWrap(True)
-            layout.addRow("PTS otomasyonu", self.automation_enabled)
-            layout.addRow("PTS pencere başlığı", self.automation_main_title)
-            layout.addRow("Bilet Sorgulama başlığı", self.automation_ticket_title)
-            layout.addRow("Satır sağ-tık yatay oranı", self.automation_click_x)
-            layout.addRow("Zaman aşımı (sn)", self.automation_timeout)
-            layout.addRow(automation_note)
         layout.addRow(note)
         layout.addRow(buttons)
 
@@ -413,16 +267,5 @@ class SettingsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Geçersiz OCR kısayolu", str(error))
             return
         self.config.debug.enabled = self.debug.isChecked()
-        if self.automation_test:
-            self.config.automation.enabled = self.automation_enabled.isChecked()
-            self.config.automation.main_window_title_contains = self.automation_main_title.text().strip()
-            self.config.automation.ticket_window_title_contains = self.automation_ticket_title.text().strip()
-            self.config.automation.ticket_row_click_x = self.automation_click_x.value()
-            self.config.automation.timeout_seconds = self.automation_timeout.value()
-            try:
-                self.config.automation.validate()
-            except ValueError as error:
-                QtWidgets.QMessageBox.warning(self, "Geçersiz otomasyon ayarı", str(error))
-                return
         self.saved.emit(self.config)
         self.accept()

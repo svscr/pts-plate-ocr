@@ -13,8 +13,7 @@ from .shortcuts import DEFAULT_HOTKEY, normalize_hotkey
 
 LOGGER = logging.getLogger(__name__)
 APP_NAME = "PTSPlateOCR"
-AUTOMATION_TEST_APP_NAME = "PTSPlateOCRAutomationTest"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 @dataclass
@@ -29,93 +28,6 @@ class DebugConfig:
     enabled: bool = False
     retention_days: int = 7
     max_megabytes: int = 500
-
-
-@dataclass
-class AutomationConfig:
-    """Configuration used only by the separately packaged automation test build.
-
-    The defaults were measured from the supplied ParkMatik screenshots.  Every
-    coordinate is relative to the window it belongs to, so the test build can
-    be calibrated without altering the normal OCR application's ROI settings.
-    """
-
-    enabled: bool = True
-    main_window_title_contains: str = "ParkMatik"
-    ticket_window_title_contains: str = "Bilet Sorgulama"
-    image_dialog_title_contains: str = "Bilet Resimleri"
-    plate_dialog_title_contains: str = "Plaka Değiştirme"
-    ticket_grid_roi: NormalizedRect = field(
-        default_factory=lambda: NormalizedRect(0.004, 0.175, 0.992, 0.360)
-    )
-    entrance_photo_roi: NormalizedRect = field(
-        default_factory=lambda: NormalizedRect(0.012, 0.105, 0.480, 0.790)
-    )
-    entrance_plate_search_roi: NormalizedRect = field(
-        default_factory=lambda: NormalizedRect(0.20, 0.18, 0.55, 0.42)
-    )
-    # Used only if the legacy PTS dialog does not expose an editable native
-    # control that can be safely focused.
-    plate_input_roi: NormalizedRect = field(
-        default_factory=lambda: NormalizedRect(0.080, 0.120, 0.840, 0.230)
-    )
-    ticket_row_click_x: float = 0.56
-    timeout_seconds: int = 6
-
-    def validate(self) -> None:
-        if not self.main_window_title_contains.strip():
-            raise ValueError("PTS ana pencere başlığı boş olamaz.")
-        if not self.ticket_window_title_contains.strip():
-            raise ValueError("Bilet Sorgulama pencere başlığı boş olamaz.")
-        if not self.image_dialog_title_contains.strip():
-            raise ValueError("Görsel pencere başlığı boş olamaz.")
-        if not self.plate_dialog_title_contains.strip():
-            raise ValueError("Plaka penceresi başlığı boş olamaz.")
-        for rect in (
-            self.ticket_grid_roi,
-            self.entrance_photo_roi,
-            self.entrance_plate_search_roi,
-            self.plate_input_roi,
-        ):
-            rect.validate()
-        if not 0 < self.ticket_row_click_x < 1:
-            raise ValueError("Bilet satırı tıklama noktası 0 ile 1 arasında olmalı.")
-        if not 2 <= self.timeout_seconds <= 30:
-            raise ValueError("Otomasyon zaman aşımı 2 ile 30 saniye arasında olmalı.")
-
-    @classmethod
-    def from_dict(cls, raw: dict[str, Any] | None) -> "AutomationConfig":
-        source = raw or {}
-        defaults = cls()
-        return cls(
-            enabled=bool(source.get("enabled", defaults.enabled)),
-            main_window_title_contains=str(
-                source.get("main_window_title_contains", defaults.main_window_title_contains)
-            ),
-            ticket_window_title_contains=str(
-                source.get("ticket_window_title_contains", defaults.ticket_window_title_contains)
-            ),
-            image_dialog_title_contains=str(
-                source.get("image_dialog_title_contains", defaults.image_dialog_title_contains)
-            ),
-            plate_dialog_title_contains=str(
-                source.get("plate_dialog_title_contains", defaults.plate_dialog_title_contains)
-            ),
-            ticket_grid_roi=NormalizedRect.from_dict(
-                source.get("ticket_grid_roi", asdict(defaults.ticket_grid_roi))
-            ),
-            entrance_photo_roi=NormalizedRect.from_dict(
-                source.get("entrance_photo_roi", asdict(defaults.entrance_photo_roi))
-            ),
-            entrance_plate_search_roi=NormalizedRect.from_dict(
-                source.get("entrance_plate_search_roi", asdict(defaults.entrance_plate_search_roi))
-            ),
-            plate_input_roi=NormalizedRect.from_dict(
-                source.get("plate_input_roi", asdict(defaults.plate_input_roi))
-            ),
-            ticket_row_click_x=float(source.get("ticket_row_click_x", defaults.ticket_row_click_x)),
-            timeout_seconds=int(source.get("timeout_seconds", defaults.timeout_seconds)),
-        )
 
 
 @dataclass
@@ -134,7 +46,6 @@ class AppConfig:
     photo_roi_relative_to_window: NormalizedRect | None = None
     confidence: ConfidenceConfig = field(default_factory=ConfidenceConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
-    automation: AutomationConfig = field(default_factory=AutomationConfig)
     popup_timeout_seconds: int = 8
 
     def validate(self) -> None:
@@ -145,7 +56,10 @@ class AppConfig:
         self.hotkey = normalize_hotkey(self.hotkey)
         if not 0 < self.confidence.high_score <= 1:
             raise ValueError("high_score must be between 0 and 1")
-        self.automation.validate()
+        if not 0 <= self.confidence.minimum_margin <= 1:
+            raise ValueError("minimum_margin must be between 0 and 1")
+        if self.confidence.minimum_agreeing_variants < 1:
+            raise ValueError("minimum_agreeing_variants must be at least 1")
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "AppConfig":
@@ -157,16 +71,9 @@ class AppConfig:
             # calibration and any deliberately chosen non-F7 function key.
             if str(migrated.get("hotkey", "F7")).strip().upper() == "F7":
                 migrated["hotkey"] = DEFAULT_HOTKEY
-            migrated["schema_version"] = SCHEMA_VERSION
-            automation = dict(migrated.get("automation") or {})
-            if float(automation.get("ticket_row_click_x", 0.12)) == 0.12:
-                automation["ticket_row_click_x"] = AutomationConfig().ticket_row_click_x
-            migrated["automation"] = automation
-        elif source_schema_version in (2, 3, 4):
-            automation = dict(migrated.get("automation") or {})
-            if float(automation.get("ticket_row_click_x", 0.12)) == 0.12:
-                automation["ticket_row_click_x"] = AutomationConfig().ticket_row_click_x
-            migrated["automation"] = automation
+        if source_schema_version in (1, 2, 3, 4, 5):
+            # Schema 6 removes abandoned PTS automation settings while retaining
+            # the OCR hotkey and calibration fields loaded below.
             migrated["schema_version"] = SCHEMA_VERSION
         elif source_schema_version != SCHEMA_VERSION:
             raise ValueError("Unsupported config schema")
@@ -187,7 +94,6 @@ class AppConfig:
             ),
             confidence=ConfidenceConfig(**migrated.get("confidence", {})),
             debug=DebugConfig(**migrated.get("debug", {})),
-            automation=AutomationConfig.from_dict(migrated.get("automation")),
             popup_timeout_seconds=int(migrated.get("popup_timeout_seconds", 8)),
         )
         config.validate()
