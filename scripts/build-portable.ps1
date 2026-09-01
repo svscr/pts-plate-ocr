@@ -59,7 +59,8 @@ if (Test-Path -LiteralPath $checksumPath) {
 
 Compress-Archive -LiteralPath $appPath -DestinationPath $archivePath -CompressionLevel Optimal
 $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-"$hash  $(Split-Path -Leaf $archivePath)" | Set-Content -LiteralPath $checksumPath -Encoding ascii
+$checksum = "$hash  $(Split-Path -Leaf $archivePath)`n"
+[System.IO.File]::WriteAllText($checksumPath, $checksum, [System.Text.Encoding]::ASCII)
 
 Write-Host "Uygulama klasörü: $appPath"
 Write-Host "Portable ZIP: $archivePath"
