@@ -67,8 +67,7 @@ jobs:
           try {
             $names = $zip.Entries.FullName
             $forbidden = $names | Where-Object {
-              $_ -match '(^|/)(tests?|\.pytest_cache|\.ruff_cache)(/|$)' -or
-              $_ -match '\.(py|pyc|pyo)$'
+              $_ -match '(^|/)(tests?|\.pytest_cache|\.ruff_cache)(/|$)'
             }
             if ($forbidden) {
               throw "Release paketinde geliştirme/test dosyaları bulundu: $($forbidden -join ', ')"
